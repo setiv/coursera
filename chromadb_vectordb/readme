@@ -1,0 +1,5 @@
+commands to run in order to connect to chromadb and run files: 
+
+1) docker run -d -p 8000:8000 chromadb/chroma:0.4.15
+2) node <filename>
+
