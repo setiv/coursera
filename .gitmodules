@@ -1,0 +1,3 @@
+[submodule "github_pgvector_repo"]
+	path = github_pgvector_repo
+	url = https://github.com/setiv/github_pgvector_repo.git

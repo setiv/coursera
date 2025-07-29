@@ -19,3 +19,7 @@
 
 # VS Code
 .vscode/
+
+# Git submodule metadata
+**/.gitmodules
+**/.git/*
