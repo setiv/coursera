@@ -5082,6 +5082,6 @@ const foodItems=[
 
 
 
-  ]
+]
 
-  module.exports=foodItems;
+export default foodItems;

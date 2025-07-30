@@ -1,10 +1,20 @@
+/*
+1. create collection
+2. convert the collection data into vector embeddings
+3. store the embeddings into the database
+4. convert user input into a vector embeddings
+5. compare embeddings in the database to the converted user input
+6. rank and return top 5 matches
+*/
+
+
+import { ChromaClient } from 'chromadb';
+import { HfInference } from "@huggingface/inference";
 import dotenv from 'dotenv';
+import foodItems from './FoodDataSet.js';
 dotenv.config();
-const { ChromaClient } = require("chromadb");
 const client = new ChromaClient();
-const { HfInference } = require("@huggingface/inference");
 const hf = new HfInference(process.env.HUGGINGFACE_HUB_TOKEN);
-const foodItems = require('./FoodDataSet.js');
 const collectionName = "food_collection";
 
 async function generateEmbeddings(texts) {
@@ -16,14 +26,24 @@ async function generateEmbeddings(texts) {
 }
 
 async function classifyText(text, labels) {
-    const responses = await hf.zeroShotClassification({
+    const response = await hf.zeroShotClassification({
       model: "facebook/bart-large-mnli",
-      inputs: [text], 
+      inputs: text, 
       parameters: {
         candidate_labels: labels,
       },
     });
-    return responses[0];
+
+    // response is an array of { label, score }
+  if (!Array.isArray(response)) {
+    throw new Error("Unexpected response format from HuggingFace");
+  }
+
+  // Extract labels and scores into separate arrays (if needed)
+  const labelsArr = response.map(r => r.label);
+  const scoresArr = response.map(r => r.score);
+
+  return { labels: labelsArr, scores: scoresArr };
 }
 
 async function extractFilterCriteria(query) {
@@ -64,6 +84,10 @@ async function performSimilaritySearch(collection, queryTerm, filterCriteria) {
             n: 5,
         });
 
+        // DEBUGGING LINES
+        console.log("Top retrieved IDs:", results.ids[0]);
+        console.log("Distances:", results.distances[0]);
+
         if (!results || results.length === 0) {
             console.log(`No food items found similar to "${queryTerm}"`);
             return [];
@@ -85,13 +109,15 @@ async function performSimilaritySearch(collection, queryTerm, filterCriteria) {
 }
 
 async function main() {
-    const query = "I want to eat vegan food";
+    const query = "I want to eat chocolate";
 
     try {
         console.log("Trying to get or create collection...");
-
+        let collection;
         try {
-            const collection = await client.getOrCreateCollection({ name: "food-rec" });
+            collection = await client.getOrCreateCollection({ name: "food-rec" });
+            // **** clears data, not the collection itself
+            await collection.delete();
             console.log("Collection ready:", collection);
         } catch (err) {
             console.error("Failed to get/create collection:", err.message);
