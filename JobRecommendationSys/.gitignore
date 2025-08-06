@@ -1,0 +1,25 @@
+# macOS
+.DS_Store
+
+# Node.js
+**/node_modules/
+**/dist/
+**/build/
+**/*.log
+
+# Python
+**/__pycache__/
+**/*.pyc
+
+# Jupyter
+**/.ipynb_checkpoints/
+
+# Environment files
+**/.env
+
+# VS Code
+.vscode/
+
+# Git submodule metadata
+**/.gitmodules
+**/.git/*
