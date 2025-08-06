@@ -1,26 +1,16 @@
-import fs from "fs";
-import pdf from "pdf-parse";
-import readline from "readline";
-import dotenv from "dotenv";
-dotenv.config();
-import { HfInference } from "@huggingface/inference";
-import { ChromaClient } from "chromadb";
-import foodItems from './FoodDataSet.js';
-
-
-/* const fs = require("fs");
+const fs = require("fs");
 const pdf = require("pdf-parse");
 const readline = require("readline");
 const dotenv = require("dotenv");
 dotenv.config();
-const { KFInference } = require("@huggingface/inference");
+const { HfInference } = require("@huggingface/inference");
 const { ChromaClient } = require("chromadb");
-const foodItems = require('./FoodDataSet.js'); */ 
+const jobPostings = require('./jobPostings.js');
 
 const hf = new HfInference(process.env.HUGGINGFACE_HUB_TOKEN);
 const chroma = new ChromaClient();
 
-const collectionName = "recipe_food";
+const collectionName = "job_collection";
 
 const extractTextFromPDF = async (filePath) => {
   try {
@@ -47,31 +37,22 @@ const generateEmbeddings = async (text) => {
       console.error("Error converting text to embeddings:", err);
       throw err;
     }
-  };
-
-  const promptUserInput = (query) => {
-    const rl = readline.createInterface({
-      input: process.stdin,
-      output: process.stdout,
-    });
-    return new Promise((resolve) =>
-      rl.question(query, (answer) => {
-        rl.close();
-        resolve(answer);
-      })
-    );
-  };
-
-const extractIngredients = (text) => {
-    const ingredientsPattern = /Ingredients([\s\S]+?)For /i;
-    const ingredientsMatch = ingredientsPattern.exec(text);
-    if (ingredientsMatch) {
-        return ingredientsMatch[1].split(/[^a-zA-Z0-9]+/).map(item => item.trim().toLowerCase()).filter(item => item.length > 0);
-    }
-    return [];
 };
 
-const storeEmbeddingsInChromaDB = async (jobPostings) => {
+const promptUserInput = (query) => {
+        const rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout,
+        });
+        return new Promise((resolve) =>
+        rl.question(query, (answer) => {
+            rl.close();
+            resolve(answer);
+        })
+        );
+};
+
+const storeEmbeddings = async (jobPostings) => {
   const jobEmbeddings = [];
   const metadatas = jobPostings.map((item, index) => ({
     jobTitle: item.jobTitle,
@@ -81,18 +62,24 @@ const storeEmbeddingsInChromaDB = async (jobPostings) => {
   for (const job of jobPostings) {
     const embedding = await generateEmbeddings(job.jobDescription.toLowerCase());
     jobEmbeddings.push(embedding);
-    // console.log(item.food_ingredients);
   }
   const ids = jobPostings.map((_, index) => index.toString());
   const jobTexts = jobPostings.map(job => job.jobTitle);
 
   // validation check to ensure ids, documents, embeddings, and metadata are the same length
-  if (ids.length !== foodTexts.length || foodTexts.length !== foodEmbeddings.length || foodEmbeddings.length !== metadatas.length) {
+  if (ids.length !== jobTexts.length || jobTexts.length !== jobEmbeddings.length || jobEmbeddings.length !== metadatas.length) {
     throw new Error("Inconsistent lengths among ids, documents, embeddings, and metadata.");
   }
 
   try {
     const collection = await chroma.getOrCreateCollection({ name: collectionName });
+
+    // wipe all old records by ID before adding new ones 
+    const allIds = await collection.get();
+    if (allIds && allIds.ids && allIds.ids.length > 0) {
+        await collection.delete({ ids: allIds.ids });  // **** clears data, not the collection itself
+        console.log(`Deleted ${allIds.ids.length} old embeddings.`);
+    }
 
     await collection.add({
       ids: ids,
@@ -109,43 +96,36 @@ const storeEmbeddingsInChromaDB = async (jobPostings) => {
 
 const main = async () => {
     try {
-      await storeEmbeddingsInChromaDB(foodItems);
+        await storeEmbeddings(jobPostings);
   
-      // Extract and process the recipe PDF
-      const filePath = await promptUserInput("Enter the path to the recipe PDF: ");
-      const text = await extractTextFromPDF(filePath);
-      const ingredients = extractIngredients(text);
+        // Extract and process the resume PDF
+        const filePath = await promptUserInput("Enter the path to the resume PDF: ");
+        const text = await extractTextFromPDF(filePath);
+      
+        // Generate embedding for the resume text
+        const resumeEmbedding = await generateEmbeddings(text.toLowerCase());
   
-      if (ingredients.length > 0) {
-        console.log("Extracted Ingredients:", ingredients);
-  
-        // Generate embedding for the extracted ingredients
-        const recipeEmbedding = await generateEmbeddings(ingredients.join(' ').toLowerCase());
-  
-        // Query Chroma DB for similar recipes
+        // Query Chroma DB for similar job postings
         const collection = await chroma.getCollection({ name: collectionName });
         const results = await collection.query({
-          queryEmbeddings: [recipeEmbedding],
+          queryEmbeddings: [resumeEmbedding],
           n: 5, // Get top 5 similar items
         });
   
         console.log("Chroma DB Query Results:", results);
   
         if (results.ids.length > 0 && results.ids[0].length > 0) {
-          console.log("Recommended Recipes:");
-          results.ids[0].forEach((id, index) => {
-            const recommendedItem = foodItems[parseInt(id)];
-            console.log(`Top ${index + 1} Recommended Item ==> ${recommendedItem.food_name}`);
+            console.log("Recommended Job Postings:");
+            results.ids[0].forEach((id, index) => {
+            const jobTitle = results.documents[0][index];
+            console.log(`Top ${index + 1} Recommended Job Posting ==> ${jobTitle}`);
           });
         } else {
-          console.log("No similar recipes found.");
+          console.log("No similar job postings found.");
         }
-      } else {
-        console.log("No ingredients found in the recipe.");
-      }
     } catch (err) {
       console.error("An error occurred:", err);
     }
-  };
+};
 
-  main();
+main();
